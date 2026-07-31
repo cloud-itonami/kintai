@@ -58,7 +58,12 @@
   #{:approve-attendance :correct-punch
     ;; Granting leave changes who is on the board, and it is a decision
     ;; about someone's time. Never automatic.
-    :approve-leave})
+    :approve-leave
+    ;; Publishing a roster tells people when to work. `propose-roster`
+    ;; already refuses to fill from anything but declared availability,
+    ;; so what reaches here is admissible — but admissible is not the
+    ;; same as decided, and the deciding is a person's.
+    :generate-roster})
 
 (defn- paired [store worker-id]
   (shift/pair-punches (store/punches-of store worker-id)))
@@ -149,6 +154,31 @@
                              {:period [(:period-from proposal) (:period-to proposal)]})]
         {:lawful? (empty? (worklaw/prohibitions r)) :law r :evaluable? true}))))
 
+(defn- unlawful-proposed
+  "Which proposed shifts would leave their person with an unlawful
+  schedule. Same construction as `swap-lawful?`: spans built from PLANNED
+  shifts carry no `:worked/break-ms`, so `kotoba.worklaw` reports break
+  rules as unevaluated rather than violated — a roster records when a
+  shift starts and ends, not whether anyone took lunch."
+  [store proposal]
+  (let [date-of (:date-of proposal)]
+    (when (fn? date-of)
+      (vec
+       (for [sh (:proposed proposal)
+             :let [person (:shift/person sh)
+                   j (store/worker-jurisdiction store person)]
+             :when j
+             :let [spans (mapv (fn [x] {:worked/person person
+                                        :worked/start (:shift/start x)
+                                        :worked/end (:shift/end x)
+                                        :worked/ms (- (:shift/end x) (:shift/start x))})
+                               (conj (store/shifts-of store person) sh))
+                   r (worklaw/check spans j date-of
+                                    {:period [(:period-from proposal) (:period-to proposal)]})]
+             :when (seq (worklaw/prohibitions r))]
+         {:shift (:shift/id sh) :person person
+          :rules (mapv #(get-in % [:violation/rule :rule/id]) (worklaw/prohibitions r))})))))
+
 (defn- hard-violations [request proposal store law]
   (let [{:keys [op effect hours]} proposal
         worker-id (:worker-id request)
@@ -236,6 +266,16 @@
            (not (:evaluable? (swap-lawful? store proposal))))
       (conj {:rule :unevaluable-swap
              :detail "受け手の jurisdiction / :date-of / period が無く、適法性を判定できない"})
+
+      ;; ---- a generated roster may not be unlawful for anyone on it ----
+      ;;
+      ;; Same rule as :unlawful-swap and for the same reason: a roster
+      ;; that a manager would approve is still not one a statute permits.
+      (and (= :generate-roster op)
+           (seq (unlawful-proposed store proposal)))
+      (conj {:rule :unlawful-roster-proposal
+             :detail (str "提案 shift が受け手を法定違反にする: "
+                          (pr-str (unlawful-proposed store proposal)))})
 
       (and approving? law (seq (worklaw/prohibitions law)))
       (conj {:rule :unlawful-roster

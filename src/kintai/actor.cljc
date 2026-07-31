@@ -86,6 +86,13 @@
                         (when-let [l (first (filter #(= (:leave-id proposal) (:leave/id %))
                                                     (store/leave store)))]
                           (store/record-leave! store (assoc l :leave/status :approved))))
+                      ;; Only on approval — and only the shifts the
+                      ;; proposal actually named. propose-roster returned
+                      ;; a shortfall too, and a shortfall does not become
+                      ;; a shift by being approved.
+                      (when (= :generate-roster (:op proposal))
+                        (doseq [sh (:proposed proposal)]
+                          (store/publish-shift! store sh)))
                       (when (= :propose-swap (:op proposal))
                         (store/record-swap! store (:swap proposal)))
                       (when (= :accept-swap (:op proposal))

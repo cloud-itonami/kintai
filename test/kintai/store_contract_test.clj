@@ -33,6 +33,10 @@
   (doseq [[label make] backends]
     (testing (str "backend " label) (f (seeded make)))))
 
+(defn- each-empty-backend [f]
+  (doseq [[label make] backends]
+    (testing (str "backend " label) (f (make)))))
+
 ;; ---------------------------------------------------------------------------
 ;; Worker directory
 ;; ---------------------------------------------------------------------------
@@ -162,3 +166,96 @@
     (is (= (run store/mem-store) (run store/datomic-store)))
     (is (= {:disposition :hold :rules [:unlawful-roster] :records 0 :law-coverage [:full]}
            (run store/datomic-store)))))
+
+;; ---------------------------------------------------------------------------
+;; Availability, leave and swaps
+;;
+;; Added in the iteration that gave kintai its leave and swap ops. These
+;; store methods went in without contract coverage, which is exactly the
+;; gap this file exists to close — the same suite has already found a
+;; MemStore-only bug in each of the three actors.
+;; ---------------------------------------------------------------------------
+
+(deftest availability-round-trips-and-de-duplicates
+  (each-backend
+   (fn [st]
+     (let [a (shift/availability "w-1" :nurse (at 0 0) (at 1 0))]
+       (store/declare-availability! st a)
+       (store/declare-availability! st a)
+       (testing "a duplicated availability would double-count in available?"
+         (is (= 1 (count (store/availabilities st)))))
+       (is (= a (first (store/availabilities st))))))))
+
+(deftest availabilities-for-different-windows-coexist
+  (each-backend
+   (fn [st]
+     (store/declare-availability! st (shift/availability "w-1" :nurse (at 0 0) (at 1 0)))
+     (store/declare-availability! st (shift/availability "w-1" :nurse (at 2 0) (at 3 0)))
+     (is (= 2 (count (store/availabilities st)))))))
+
+(deftest leave-round-trips-and-a-status-change-replaces-rather-than-forks
+  (each-backend
+   (fn [st]
+     (let [l (shift/leave-request "l-1" "w-1" :annual (at 5 0) (at 6 0))]
+       (store/record-leave! st l)
+       (is (= [:requested] (mapv :leave/status (store/leave st))))
+       (store/record-leave! st (assoc l :leave/status :approved))
+       (testing "one leave record, now approved — not two records disagreeing"
+         (is (= 1 (count (store/leave st))))
+         (is (= [:approved] (mapv :leave/status (store/leave st))))))))) 
+
+(deftest leave-reads-back-in-a-stable-order
+  (each-backend
+   (fn [st]
+     (doseq [n ["l-3" "l-1" "l-2"]]
+       (store/record-leave! st (shift/leave-request n "w-1" :annual (at 5 0) (at 6 0))))
+     (is (= ["l-1" "l-2" "l-3"] (mapv :leave/id (store/leave st)))))))
+
+(deftest a-swap-round-trips-with-its-acceptances
+  (each-backend
+   (fn [st]
+     (let [sw (-> (shift/swap-proposal "sw-1" "s-1" "w-1" "w-2")
+                  (shift/accept-swap "w-1")
+                  (shift/accept-swap "w-2"))]
+       (store/record-swap! st sw)
+       (let [read-back (first (store/swaps st))]
+         (testing "the acceptance SET survives the blob round-trip — a swap that
+                   lost one acceptance would read as one-sided"
+           (is (= #{"w-1" "w-2"} (:swap/accepted-by read-back)))
+           (is (shift/swap-ready? read-back))))))))
+
+(deftest re-recording-a-swap-id-replaces-it
+  (each-backend
+   (fn [st]
+     (let [sw (shift/swap-proposal "sw-1" "s-1" "w-1" "w-2")]
+       (store/record-swap! st sw)
+       (store/record-swap! st (shift/accept-swap sw "w-1"))
+       (is (= 1 (count (store/swaps st))))
+       (is (= #{"w-1"} (:swap/accepted-by (first (store/swaps st)))))))))
+
+(deftest an-empty-store-answers-empty-for-the-new-collections
+  (each-empty-backend
+   (fn [st]
+     (is (empty? (store/availabilities st)))
+     (is (empty? (store/leave st)))
+     (is (empty? (store/swaps st))))))
+
+(deftest the-swap-path-behaves-identically-on-both-backends
+  (let [run (fn [make]
+              (let [st (seeded make)
+                    _ (store/register-worker! st {:worker/id "w-2" :worker/jurisdiction [:jp]})
+                    _ (store/publish-shift! st (shift/shift "s-1" "w-1" :nurse (at 0 9) (at 0 17)))
+                    _ (store/declare-availability!
+                       st (shift/availability "w-2" :nurse (at 0 0) (at 1 0)))
+                    g (actor/build-graph {:store st})
+                    sw (-> (shift/swap-proposal "sw-1" "s-1" "w-1" "w-2")
+                           (shift/accept-swap "w-1") (shift/accept-swap "w-2"))
+                    r (actor/run-request! g {:worker-id "w-2" :op :accept-swap :swap sw
+                                             :period-from (at 0 0) :period-to (at 7 0)
+                                             :date-of date-of}
+                                          {} "t-swap")]
+                {:disposition (get-in r [:state :disposition])
+                 :owner (:shift/person (first (store/roster st)))
+                 :swaps (count (store/swaps st))}))]
+    (is (= (run store/mem-store) (run store/datomic-store)))
+    (is (= {:disposition :commit :owner "w-2" :swaps 1} (run store/datomic-store)))))

@@ -26,6 +26,7 @@
      :leave {...}        ; :request-leave
      :leave-id str       ; :approve-leave
      :swap {...}         ; :propose-swap / :accept-swap
+     :proposed [...] :still-short n   ; :generate-roster
      :confidence 0.0-1.0
      :rationale str}"
   (:require [kotoba.shift :as shift]
@@ -81,6 +82,27 @@
 
       :propose-swap
       (assoc base :swap (:swap request))
+
+      :generate-roster
+      ;; propose-roster mutates nothing and fills only from DECLARED
+      ;; availability. The advisor carries the proposal and the shortfall
+      ;; through unchanged — it does not pick who is "least likely to
+      ;; object", and neither does the library.
+      (let [{:keys [proposed still-short candidates-considered]}
+            (shift/propose-roster (store/roster store)
+                                  (store/availabilities store)
+                                  (store/leave store)
+                                  (:demand request)
+                                  (:candidates request)
+                                  (or (:next-id request) #(str "gen-" %)))]
+        (assoc base
+               :proposed proposed
+               :still-short still-short
+               :candidates-considered candidates-considered
+               :rationale (if (pos? still-short)
+                            (str (count proposed) " proposed, " still-short
+                                 " still short — no more declared availability")
+                            (str (count proposed) " proposed; demand covered"))))
 
       :accept-swap
       ;; The advisor carries the proposal through with the acceptance

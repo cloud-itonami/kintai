@@ -43,6 +43,17 @@ The spans that check builds omit `:worked/break-ms` rather than setting it to 0.
 A roster records when a shift starts and ends, not whether anyone took lunch; see
 `kotoba-lang/worklaw`'s "nil is not zero".
 
+## Roster generation
+
+`:generate-roster` always escalates — `propose-roster` decides what is
+*admissible*, a person decides what is *published*. Approval publishes exactly
+the proposed shifts; a shortfall does not become a shift by being approved.
+
+The governor re-runs the statute over the proposal because `available?` cannot
+see it: a non-overlapping earlier shift leaves someone "free" and still past a
+daily cap. Do not drop that check on the grounds that the generator already
+filtered — the two answer different questions.
+
 ## Recording is never gated on lawfulness
 
 Refusing to record a punch because the week is becoming illegal would erase the

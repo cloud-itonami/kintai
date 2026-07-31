@@ -171,3 +171,89 @@
                    (dissoc (swap-req (swap-proposal "w-1" "w-2")) :date-of))]
       (is (:hard? v))
       (is (some #(= :unevaluable-swap (:rule %)) (:violations v))))))
+
+;; ---------------------------------------------------------------------------
+;; Roster generation — a proposal is not a roster
+;; ---------------------------------------------------------------------------
+
+(defn- gen-req [candidates]
+  {:worker-id "mgr" :op :generate-roster
+   :demand (shift/demand :nurse (at 0 9) (at 0 17) 3)
+   :candidates candidates
+   :period-from (at 0 0) :period-to (at 7 0) :date-of date-of})
+
+(defn- free [st & people]
+  (doseq [p people]
+    (store/register-worker! st {:worker/id p :worker/jurisdiction [:jp]})
+    (store/declare-availability! st (shift/availability p :nurse (at 0 0) (at 1 0))))
+  st)
+
+(deftest generating-a-roster-always-waits-for-a-human
+  (testing "propose-roster already refuses to fill from anything but declared
+            availability, so what reaches the governor is admissible — but
+            admissible is not decided, and publishing tells people when to work"
+    (let [st (free (fresh) "n-1" "n-2" "n-3")
+          g (actor/build-graph {:store st})
+          r (actor/run-request! g (gen-req ["n-1" "n-2" "n-3"]) {} "t-1")]
+      (is (= :interrupted (:status r)))
+      (is (= 3 (count (get-in r [:state :proposal :proposed]))))
+      (testing "nothing is on the roster while the thread waits"
+        (is (empty? (store/roster st))))
+      (actor/approve! g "t-1")
+      (is (= 3 (count (store/roster st)))))))
+
+(deftest a-shortfall-does-not-become-a-shift-by-being-approved
+  (let [st (free (fresh) "n-1")
+        g (actor/build-graph {:store st})
+        r (actor/run-request! g (gen-req ["n-1" "n-2" "n-3"]) {} "t-1")]
+    (testing "only n-1 declared availability"
+      (is (= 1 (count (get-in r [:state :proposal :proposed]))))
+      (is (= 2 (get-in r [:state :proposal :still-short]))))
+    (actor/approve! g "t-1")
+    (testing "approval publishes what was proposed and invents nothing"
+      (is (= 1 (count (store/roster st))))
+      (is (= ["n-1"] (mapv :shift/person (store/roster st)))))))
+
+(deftest nobody-on-approved-leave-is-proposed
+  (let [st (free (fresh) "n-1" "n-2")
+        _ (store/record-leave! st (assoc (shift/leave-request "l-1" "n-1" :annual (at 0 0) (at 1 0))
+                                         :leave/status :approved))
+        g (actor/build-graph {:store st})
+        r (actor/run-request! g (gen-req ["n-1" "n-2"]) {} "t-1")]
+    (is (= ["n-2"] (mapv :shift/person (get-in r [:state :proposal :proposed]))))))
+
+(deftest availability-cannot-see-what-the-statute-sees
+  (testing "n-1 works 03:00–09:00, which does NOT overlap the 09:00–17:00
+            demand — so `available?` says free, and it is right about the
+            clash. What it cannot see is that 6h + 8h breaks 労基法 32条2項's
+            daily cap. That gap is the whole reason the governor re-runs the
+            statute over the proposal rather than trusting the generator."
+    (let [st (free (fresh) "n-1")
+          _ (store/publish-shift! st (shift/shift "s-0" "n-1" :nurse (at 0 3) (at 0 9)))
+          g (actor/build-graph {:store st})
+          r (actor/run-request! g (gen-req ["n-1"]) {} "t-1")]
+      (testing "the generator does propose them — no overlap, availability declared"
+        (is (= ["n-1"] (mapv :shift/person (get-in r [:state :proposal :proposed])))))
+      (testing "and the governor holds it anyway"
+        (is (= :hold (disposition r)))
+        (is (some #{:unlawful-roster-proposal} (rules-of r))))
+      (testing "nothing was published — the pre-existing shift is all there is"
+        (is (= 1 (count (store/roster st))))))))
+
+(deftest an-overlapping-shift-is-excluded-by-availability-before-the-statute-runs
+  (testing "two layers, and the cheap one goes first"
+    (let [st (free (fresh) "n-1")
+          _ (store/publish-shift! st (shift/shift "s-0" "n-1" :nurse (at 0 9) (at 0 20)))
+          g (actor/build-graph {:store st})
+          r (actor/run-request! g (gen-req ["n-1"]) {} "t-1")]
+      (is (empty? (get-in r [:state :proposal :proposed])))
+      (testing "and the gap is 2, not 3 — n-1's existing 09:00–20:00 shift
+                already spans the demand window, so coverage counts them"
+        (is (= 2 (get-in r [:state :proposal :still-short])))))))
+
+(deftest generation-never-mutates-the-roster-before-approval
+  (let [st (free (fresh) "n-1" "n-2" "n-3")
+        g (actor/build-graph {:store st})]
+    (dotimes [_ 3] (actor/run-request! g (gen-req ["n-1" "n-2" "n-3"]) {} (str "t-" (rand-int 1e9))))
+    (testing "three generations, no approvals, still an empty roster"
+      (is (empty? (store/roster st))))))

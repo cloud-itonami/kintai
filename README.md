@@ -121,6 +121,32 @@ around it. And a swap whose lawfulness could not be checked at all
 break rules as `:missing-break-data` instead of violated. A roster says when a
 shift starts and ends and nothing about lunch.
 
+### Roster generation proposes; approval publishes
+
+`:generate-roster` **always escalates**. `kotoba.shift/propose-roster` already
+refuses to fill from anything but declared availability, so what reaches the
+governor is admissible — but admissible is not decided, and publishing a roster
+tells people when to work.
+
+```clojure
+(actor/run-request! g {:worker-id "mgr" :op :generate-roster
+                       :demand (shift/demand :nurse from to 3)
+                       :candidates ["n-1" "n-2" "n-3"]
+                       :period-from from :period-to to :date-of date-of} {} "t-1")
+;; => :interrupted, {:proposed [...] :still-short 1}
+(actor/approve! g "t-1")   ;; publishes exactly what was proposed
+```
+
+A shortfall does not become a shift by being approved. And the statute runs over
+the proposal for the same reason it runs over a swap:
+
+> `n-1` works 03:00–09:00, which does **not** overlap a 09:00–17:00 demand — so
+> `available?` says free, and it is right about the clash. What it cannot see is
+> that 6h + 8h breaks 労基法 32条2項. `:unlawful-roster-proposal`, held.
+
+Two layers, and the cheap one goes first: an *overlapping* shift is excluded by
+availability before the statute is ever consulted.
+
 ## Operations
 
 ```clojure
@@ -158,11 +184,11 @@ stays in the punch stream, so "who changed this and when" remains answerable.
 |---|---|
 | Role | actor (advisor ⊣ governor ⊣ ledger) |
 | Capability libraries | `kotoba-lang/shift`, `kotoba-lang/worklaw` (sibling paths) |
-| Tests | 45 tests, 147 assertions, all green |
+| Tests | 75 tests, 236 assertions, all green |
 | Jurisdictions | whatever `kotoba-lang/worklaw` ships — `[:jp]` (incl. 36協定) `[:us]` `[:us :ca]` `[:eu]` `[:eu :fr]` `[:eu :de]` |
 | Store | `MemStore` + `DatomicStore` (langchain.db), proved interchangeable by a contract test |
 | Deployment | Cloudflare Pages Functions — `POST /api/punch`, CACAO + allow-list gated |
-| Not covered | payroll calculation (that is `kotoba-lang/labor`); leave accrual, swaps and roster generation exist in `kotoba-lang/shift` but are not yet governed ops here |
+| Not covered | payroll calculation (that is `kotoba-lang/labor`); leave accrual reporting, shift-swap marketplaces, absence balances surfaced to workers |
 
 ## Store backends
 
