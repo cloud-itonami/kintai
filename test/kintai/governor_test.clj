@@ -100,12 +100,47 @@
       (is (not (:escalate? v))))))
 
 (deftest hard-when-only-the-national-level-has-rules
-  (let [st (clean-week! (fresh-store [:us :ca]))
-        v (check {:worker-id "w-1"} (approve-proposal :hours 40.0) st)]
-    (is (:hard? v))
-    (is (some #(= :unchecked-law (:rule %)) (:violations v)))
-    (is (= :partial (get-in v [:law :worklaw/coverage])))
-    (is (= [[:us :ca]] (get-in v [:law :worklaw/unchecked])))))
+  (testing "Texas has no rule set, so a US/TX worker is checked federally only"
+    (let [st (clean-week! (fresh-store [:us :tx]))
+          v (check {:worker-id "w-1"} (approve-proposal :hours 40.0) st)]
+      (is (:hard? v))
+      (is (some #(= :unchecked-law (:rule %)) (:violations v)))
+      (is (= :partial (get-in v [:law :worklaw/coverage])))
+      (is (= [[:us :tx]] (get-in v [:law :worklaw/unchecked]))))))
+
+(deftest a-covered-sub-jurisdiction-is-checked-at-both-levels
+  (testing "California DOES have rules, so [:us :ca] is full coverage — and its
+            daily overtime, which federal law lacks, is priced not blocked"
+    (let [st (fresh-store [:us :ca])]
+      (doseq [d (range 5)] (store/record-punches! st "w-1" (shift-punches d 8 21 12 13)))
+      (let [v (check {:worker-id "w-1"} (approve-proposal) st)]
+        (is (= :full (get-in v [:law :worklaw/coverage])))
+        (is (not (:hard? v)))
+        (is (:escalate? v))))))
+
+(deftest an-annual-cap-nobody-could-judge-escalates-with-the-list
+  (testing "seven days cannot judge 36協定. That is inherent, so it goes to the
+            human alongside the approval rather than blocking every week"
+    (let [st (clean-week! (fresh-store [:jp]))
+          v (check {:worker-id "w-1"} (approve-proposal :hours 40.0) st)]
+      (is (not (:hard? v)))
+      (is (:escalate? v))
+      (is (seq (:unevaluated v)))
+      (is (every? #(= :window-longer-than-period (:unevaluated/reason %)) (:unevaluated v))))))
+
+(deftest a-request-missing-the-calendar-is-a-hard-hold
+  (testing "a month-long period with no :week-of/:month-of is a caller error —
+            distinguished from the inherent case above"
+    (let [st (fresh-store [:jp])]
+      (doseq [wk (range 4) d (range 5)]
+        (store/record-punches! st "w-1" (shift-punches (+ (* wk 7) d) 9 18 12 13)))
+      (let [v (check {:worker-id "w-1"}
+                     {:op :approve-attendance :effect :propose
+                      :period-from (at 0 0) :period-to (at 30 0)
+                      :date-of date-of :confidence 0.9}
+                     st)]
+        (is (:hard? v))
+        (is (some #(= :unevaluable-law (:rule %)) (:violations v)))))))
 
 (deftest hard-when-the-worker-has-no-jurisdiction-at-all
   (let [st (store/mem-store)]

@@ -48,15 +48,23 @@
     (filter #(and (>= (:worked/start %) period-from) (<= (:worked/end %) period-to)) worked)
     worked))
 
-(defn- prohibitions
-  "Statutory findings that forbid, as opposed to findings that price. An
-  overtime premium is lawful and expensive; a missed rest period is not
-  lawful at any price."
-  [result]
-  (remove #(= :overtime-due (:violation/kind %)) (:worklaw/violations result)))
+(def ^:private caller-error-reasons
+  "Why a statutory rule went unevaluated, split by whose problem it is.
+  `:missing-period` / `:missing-calendar` mean the request did not carry
+  what the check needs — a caller error, and a hard hold. Everything else
+  (currently `:window-longer-than-period`) is inherent: a week cannot
+  judge an annual cap and no approver can change that, so it escalates
+  with the unevaluated list attached instead of blocking every weekly
+  approval forever."
+  #{:missing-period :missing-calendar})
 
-(defn- overtime-due? [result]
-  (boolean (some #(= :overtime-due (:violation/kind %)) (:worklaw/violations result))))
+(defn- caller-error-unevaluated [law]
+  (filterv #(contains? caller-error-reasons (:unevaluated/reason %))
+           (:worklaw/unevaluated law)))
+
+(defn- inherent-unevaluated [law]
+  (filterv #(not (contains? caller-error-reasons (:unevaluated/reason %)))
+           (:worklaw/unevaluated law)))
 
 (defn law-check
   "Re-run the statutory check for a proposal from the store's own punches.
@@ -68,14 +76,19 @@
   into a pass.
 
   The period is handed to `kotoba.worklaw` so its period-dependent rules
-  (weekly rest) can be evaluated instead of skipped."
-  [store request {:keys [period-from period-to date-of]}]
+  (weekly rest) can be evaluated instead of skipped, and `:week-of` /
+  `:month-of` are passed through when the request carries them so the
+  long-window rules (36協定 の月・年上限) can be judged over a period long
+  enough to hold them."
+  [store request {:keys [period-from period-to date-of week-of month-of]}]
   (let [j (store/worker-jurisdiction store (:worker-id request))]
     (when (and j (fn? date-of) period-from period-to)
       (let [{:keys [worked]} (paired store (:worker-id request))]
         (worklaw/check (period-filter worked {:period-from period-from :period-to period-to})
                        j date-of
-                       {:period [period-from period-to]})))))
+                       (cond-> {:period [period-from period-to]}
+                         (fn? week-of)  (assoc :week-of week-of)
+                         (fn? month-of) (assoc :month-of month-of)))))))
 
 (defn- hard-violations [request proposal store law]
   (let [{:keys [op effect hours]} proposal
@@ -107,19 +120,23 @@
                        "承認対象の期間（:period-from/:period-to/:date-of）が無く、法定チェックを実行できない"
                        "worker に :worker/jurisdiction が無い。既定の国は無い")})
 
-      (and approving? law (or (not= :full (:worklaw/coverage law))
-                              (seq (:worklaw/unevaluated law))))
+      (and approving? law (not= :full (:worklaw/coverage law)))
       (conj {:rule :unchecked-law
              :detail (str "労働法 coverage=" (name (:worklaw/coverage law))
                           "、未検査: " (pr-str (:worklaw/unchecked law))
-                          "、未評価 rule: " (pr-str (:worklaw/unevaluated law))
-                          "（規則が無いこと・評価しなかったことは、適法であることではない）")})
+                          "（規則が無いことは、適法であることではない）")})
 
-      (and approving? law (seq (prohibitions law)))
+      (and approving? law (seq (caller-error-unevaluated law)))
+      (conj {:rule :unevaluable-law
+             :detail (str "検査に必要な入力が request に無いため評価できない rule: "
+                          (pr-str (caller-error-unevaluated law))
+                          "（:period / :week-of / :month-of を渡すこと）")})
+
+      (and approving? law (seq (worklaw/prohibitions law)))
       (conj {:rule :unlawful-roster
-             :detail (str (count (prohibitions law)) " 件の法定違反: "
+             :detail (str (count (worklaw/prohibitions law)) " 件の法定違反: "
                           (pr-str (mapv #(get-in % [:violation/rule :rule/id])
-                                        (prohibitions law))))}))))
+                                        (worklaw/prohibitions law))))}))))
 
 (defn check
   "Assess a proposal against `request`/`context`/`proposal` and a `store`
@@ -135,10 +152,16 @@
         conf      (or (:confidence proposal) 0.0)
         low?      (< conf confidence-floor)
         risky-op? (contains? escalating-ops (:op proposal))
-        ot?       (boolean (and law (overtime-due? law)))]
-    {:ok?        (and (not hard?) (not low?) (not risky-op?) (not ot?))
+        priced?   (boolean (and law (seq (worklaw/priced law))))
+        ;; A rule nobody could judge over this period is not a violation
+        ;; and not a pass. It goes to the human alongside the approval,
+        ;; so "the annual cap was not checked" is something they saw
+        ;; rather than something the system decided for them.
+        unjudged  (when law (inherent-unevaluated law))]
+    {:ok?        (and (not hard?) (not low?) (not risky-op?) (not priced?) (empty? unjudged))
      :violations hard
      :law        law
+     :unevaluated unjudged
      :confidence conf
      :hard?      hard?
-     :escalate?  (and (not hard?) (or low? risky-op? ot?))}))
+     :escalate?  (and (not hard?) (or low? risky-op? priced? (seq unjudged)))}))

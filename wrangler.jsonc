@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cloud-itonami-kintai",
+  "pages_build_output_dir": "public",
+  "compatibility_date": "2026-07-31",
+  "vars": {
+    // DID -> worker id, comma separated.
+    //
+    // ABSENT OR EMPTY MEANS 503, not an open endpoint. /api/punch writes
+    // the record that decides someone's pay and, in several
+    // jurisdictions, evidence in a labour dispute.
+    "KINTAI_CALLER_ALLOWLIST": ""
+  }
+}
