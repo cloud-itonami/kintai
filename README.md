@@ -41,7 +41,7 @@ substitutes for a statute nobody has encoded**. The same applies when
 | | HARD hold |
 |---|---|
 | `:no-worker` / `:no-actuation` | unregistered worker; `:effect` other than `:propose` |
-| `:hours-mismatch` | proposed hours ≠ re-pairing the stored punches |
+| `:hours-mismatch` | the hours in the proposal ≠ re-pairing the stored punches |
 | `:unresolved-anomaly` | approving a period whose punches contain a pairing anomaly |
 | `:no-jurisdiction` | the worker has no `:worker/jurisdiction`, or the request names no period |
 | `:unchecked-law` | statutory coverage is not `:full`, or a rule went unevaluated |
