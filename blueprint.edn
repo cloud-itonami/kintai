@@ -1,0 +1,16 @@
+[{:itonami.blueprint/id "kintai"
+  :itonami.blueprint/name "Kintai — attendance and statutory working-time compliance"
+  :itonami.blueprint/family :horizontal-capability
+  :itonami.blueprint/domain :labor/attendance
+  :itonami.blueprint/license "AGPL-3.0-or-later"
+  :itonami.blueprint/social-impact [:worker-protection :statutory-compliance :fair-pay]
+  :itonami.blueprint/governor :kintai-governor
+  :itonami.blueprint/capability-library ["kotoba-lang/shift" "kotoba-lang/worklaw"]
+  :itonami.blueprint/required-technologies [:identity :audit-ledger :dmn]
+  :itonami.blueprint/jurisdictions [[:jp] [:us] [:eu]]
+  :itonami.blueprint/competes-with
+  {:workforce-management ["UKG" "Dayforce" "ADP" "Workday" "SAP SuccessFactors"
+                          "Oracle HCM" "Rippling" "Deputy" "QuickBooks Time"]}
+  :itonami.blueprint/status :public-oss
+  :itonami.blueprint/maturity :implemented
+  :db/id -1}]
