@@ -26,6 +26,22 @@
     6. unlawful roster      — any statutory violation that is a
                               prohibition (a cap, a required break, a
                               required rest) blocks approval outright.
+  LEAVE / SWAP invariants (also HARD):
+    7. :not-own-leave       — nobody requests leave on another's behalf.
+    8. :self-approval       — nobody approves their own leave.
+    9. :not-accepted-by-both / :receiver-unavailable — a swap needs both
+                              named parties AND a receiver who declared
+                              availability and is not on approved leave.
+   10. :unlawful-swap       — the receiver's resulting schedule must be
+                              lawful. This is the rule that makes
+                              composing shift with worklaw worth doing:
+                              two people may agree to swap, but they
+                              cannot agree their way past a statute.
+                              Consent between colleagues is not a source
+                              of law.
+   11. :unevaluable-swap    — the receiver's lawfulness could not be
+                              checked at all, which is not the same as
+                              lawful.
   ESCALATION invariants (:escalate? true, human sign-off):
     7. overtime due         — a `:overtime-due` finding is lawful and
                               costs money, so it goes to a person rather
@@ -38,7 +54,11 @@
             [kintai.store :as store]))
 
 (def confidence-floor 0.6)
-(def ^:private escalating-ops #{:approve-attendance :correct-punch})
+(def ^:private escalating-ops
+  #{:approve-attendance :correct-punch
+    ;; Granting leave changes who is on the board, and it is a decision
+    ;; about someone's time. Never automatic.
+    :approve-leave})
 
 (defn- paired [store worker-id]
   (shift/pair-punches (store/punches-of store worker-id)))
@@ -90,6 +110,45 @@
                          (fn? week-of)  (assoc :week-of week-of)
                          (fn? month-of) (assoc :month-of month-of)))))))
 
+(defn- shift-of [store id]
+  (first (filter #(= id (:shift/id %)) (store/roster store))))
+
+(defn- swap-lawful?
+  "Would applying this swap leave the RECEIVER with a lawful schedule?
+
+  This is the rule that makes composing `kotoba.shift` with
+  `kotoba.worklaw` worth doing: two people may agree to swap, but they
+  cannot agree their way past a statute. A swap both parties want and
+  the receiver's jurisdiction forbids is still forbidden — consent
+  between colleagues is not a source of law.
+
+  Returns `{:lawful? bool :law result}`, or `:lawful? true` with a nil
+  law when the receiver's schedule cannot be evaluated (the caller turns
+  that into its own hold — see :unevaluable-swap)."
+  [store proposal]
+  (let [sw (:swap proposal)
+        s (shift-of store (:swap/shift sw))
+        receiver (:swap/to sw)
+        j (store/worker-jurisdiction store receiver)
+        date-of (:date-of proposal)]
+    (if-not (and s j (fn? date-of))
+      {:lawful? true :law nil :evaluable? false}
+      (let [existing (store/shifts-of store receiver)
+            ;; NO :worked/break-ms. A roster records when a shift starts
+            ;; and ends and nothing about whether anyone stopped for
+            ;; lunch, so `kotoba.worklaw` treats break rules as
+            ;; unevaluated here rather than violated. Stamping a 0 would
+            ;; assert "no break was taken" from data that never said so,
+            ;; and every full-day swap would read as unlawful.
+            spans (mapv (fn [x] {:worked/person receiver
+                                 :worked/start (:shift/start x)
+                                 :worked/end (:shift/end x)
+                                 :worked/ms (- (:shift/end x) (:shift/start x))})
+                        (conj existing s))
+            r (worklaw/check spans j date-of
+                             {:period [(:period-from proposal) (:period-to proposal)]})]
+        {:lawful? (empty? (worklaw/prohibitions r)) :law r :evaluable? true}))))
+
 (defn- hard-violations [request proposal store law]
   (let [{:keys [op effect hours]} proposal
         worker-id (:worker-id request)
@@ -132,6 +191,52 @@
                           (pr-str (caller-error-unevaluated law))
                           "（:period / :week-of / :month-of を渡すこと）")})
 
+      ;; ---- leave ----
+      (and (= :request-leave op) (not= (get-in proposal [:leave :leave/person]) worker-id))
+      (conj {:rule :not-own-leave
+             :detail "他人の休暇を代理で申請することはできない"})
+
+      (and (= :approve-leave op)
+           (= worker-id (:leave/person (first (filter #(= (:leave-id proposal) (:leave/id %))
+                                                      (store/leave store))))))
+      (conj {:rule :self-approval
+             :detail "自分の休暇を自分で承認することはできない"})
+
+      (and (= :approve-leave op)
+           (nil? (first (filter #(= (:leave-id proposal) (:leave/id %)) (store/leave store)))))
+      (conj {:rule :unknown-leave
+             :detail (str "未登録の leave: " (:leave-id proposal))})
+
+      ;; ---- swap ----
+      (and (= :accept-swap op) (nil? (shift-of store (get-in proposal [:swap :swap/shift]))))
+      (conj {:rule :no-such-shift
+             :detail (str "roster に無い shift: " (get-in proposal [:swap :swap/shift]))})
+
+      (and (= :accept-swap op) (not (shift/swap-ready? (:swap proposal))))
+      (conj {:rule :not-accepted-by-both
+             :detail "片方だけの承諾は swap ではなく、手順の増えた再割当"})
+
+      (and (= :accept-swap op) (:swap proposal)
+           (let [{:keys [applied? reason]}
+                 (shift/apply-swap (store/roster store) (store/availabilities store)
+                                   (store/leave store) (:swap proposal))]
+             (and (not applied?) (= :receiver-unavailable reason))))
+      (conj {:rule :receiver-unavailable
+             :detail "受け手が availability を宣言していない／既に埋まっている／承認済み休暇中"})
+
+      (and (= :accept-swap op) (:swap proposal)
+           (not (:lawful? (swap-lawful? store proposal))))
+      (conj {:rule :unlawful-swap
+             :detail (str "受け手の schedule が法定違反になる: "
+                          (pr-str (mapv #(get-in % [:violation/rule :rule/id])
+                                        (worklaw/prohibitions (:law (swap-lawful? store proposal)))))
+                          "（当事者の合意は法の源泉ではない）")})
+
+      (and (= :accept-swap op) (:swap proposal)
+           (not (:evaluable? (swap-lawful? store proposal))))
+      (conj {:rule :unevaluable-swap
+             :detail "受け手の jurisdiction / :date-of / period が無く、適法性を判定できない"})
+
       (and approving? law (seq (worklaw/prohibitions law)))
       (conj {:rule :unlawful-roster
              :detail (str (count (worklaw/prohibitions law)) " 件の法定違反: "
@@ -157,7 +262,18 @@
         ;; and not a pass. It goes to the human alongside the approval,
         ;; so "the annual cap was not checked" is something they saw
         ;; rather than something the system decided for them.
-        unjudged  (when law (inherent-unevaluated law))]
+        ;;
+        ;; Scoped to :approve-attendance on purpose. That op's whole
+        ;; point is CERTIFYING a period, so an uncheckable rule is a
+        ;; caveat on the certificate. A swap between two colleagues does
+        ;; not turn on whether the requester's annual cap was judgeable
+        ;; from a week of punches — for that op the statutory question is
+        ;; answered separately, against the RECEIVER's resulting
+        ;; schedule, by `swap-lawful?`. Letting this escalate every op
+        ;; would send every JP swap to a manager for a reason that has
+        ;; nothing to do with the swap.
+        unjudged  (when (and law (= :approve-attendance (:op proposal)))
+                    (inherent-unevaluated law))]
     {:ok?        (and (not hard?) (not low?) (not risky-op?) (not priced?) (empty? unjudged))
      :violations hard
      :law        law

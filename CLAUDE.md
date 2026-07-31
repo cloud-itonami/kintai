@@ -25,6 +25,24 @@ inherent — seven days cannot judge an annual cap — so it escalates with the 
 attached. `:missing-period` / `:missing-calendar` mean the request did not carry
 what the check needs, and stay hard holds (`:unevaluable-law`).
 
+## Leave and swaps
+
+Nobody requests leave for another (`:not-own-leave`); nobody approves their own
+(`:self-approval`); approving always escalates.
+
+A mutually accepted swap with a free receiver **commits without a manager** — do
+not add sign-off to it. Requiring a manager for a swap two colleagues arranged is
+the paternalism the design avoids.
+
+But: **two people cannot agree their way past a statute.** `:unlawful-swap` is a
+HARD hold with no approval route, checked against the RECEIVER's resulting
+schedule. Consent between colleagues is not a source of law. `:unevaluable-swap`
+is held too — not checkable is not the same as lawful.
+
+The spans that check builds omit `:worked/break-ms` rather than setting it to 0.
+A roster records when a shift starts and ends, not whether anyone took lunch; see
+`kotoba-lang/worklaw`'s "nil is not zero".
+
 ## Recording is never gated on lawfulness
 
 Refusing to record a punch because the week is becoming illegal would erase the

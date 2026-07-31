@@ -1,6 +1,7 @@
 (ns kintai.advisor
   "KintaiAdvisor — proposes an attendance operation: record punches,
-  approve a period's attendance, publish a roster, correct a punch.
+  approve a period's attendance, publish a roster, correct a punch,
+  request or approve leave, propose or accept a shift swap.
   Swappable: `mock-advisor` (deterministic, default) or `llm-advisor`.
   Either way the advisor ONLY produces a PROPOSAL; `kintai.governor`
   independently re-pairs the punches via `kotoba.shift` and re-runs the
@@ -22,6 +23,9 @@
      :punches [...]      ; :record-punches
      :shift {...}        ; :publish-shift
      :correction {...}   ; :correct-punch
+     :leave {...}        ; :request-leave
+     :leave-id str       ; :approve-leave
+     :swap {...}         ; :propose-swap / :accept-swap
      :confidence 0.0-1.0
      :rationale str}"
   (:require [kotoba.shift :as shift]
@@ -68,6 +72,22 @@
 
       :correct-punch
       (assoc base :correction (:correction request) :confidence 0.5)
+
+      :request-leave
+      (assoc base :leave (:leave request))
+
+      :approve-leave
+      (assoc base :leave-id (:leave-id request))
+
+      :propose-swap
+      (assoc base :swap (:swap request))
+
+      :accept-swap
+      ;; The advisor carries the proposal through with the acceptance
+      ;; already applied by the caller. It does NOT decide whether the
+      ;; swap is admissible — `kotoba.shift/apply-swap` and the governor's
+      ;; statutory re-check both run independently of anything said here.
+      (assoc base :swap (:swap request))
 
       base)))
 

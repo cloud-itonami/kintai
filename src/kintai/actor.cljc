@@ -21,6 +21,7 @@
   sign-off substitutes for a statute nobody has encoded."
   (:require [langgraph.graph :as g]
             [langgraph.checkpoint :as cp]
+            [kotoba.shift :as shift]
             [kintai.advisor :as advisor]
             [kintai.governor :as governor]
             [kintai.store :as store]))
@@ -76,6 +77,30 @@
                       ;; answerable after the fact.
                       (when (= :correct-punch (:op proposal))
                         (store/record-punches! store worker-id [(:correction proposal)]))
+                      (when (= :request-leave (:op proposal))
+                        (store/record-leave! store (:leave proposal)))
+                      (when (= :approve-leave (:op proposal))
+                        ;; The status transition IS the approval, and it
+                        ;; only happens here — after a human resumed the
+                        ;; interrupted thread.
+                        (when-let [l (first (filter #(= (:leave-id proposal) (:leave/id %))
+                                                    (store/leave store)))]
+                          (store/record-leave! store (assoc l :leave/status :approved))))
+                      (when (= :propose-swap (:op proposal))
+                        (store/record-swap! store (:swap proposal)))
+                      (when (= :accept-swap (:op proposal))
+                        (let [{:keys [roster applied?]}
+                              (shift/apply-swap (store/roster store)
+                                                (store/availabilities store)
+                                                (store/leave store)
+                                                (:swap proposal))]
+                          (store/record-swap! store (:swap proposal))
+                          ;; Re-publish only what actually moved. apply-swap
+                          ;; is the single place that decides admissibility;
+                          ;; the governor has already re-checked the same
+                          ;; question and the statute on top of it.
+                          (when applied?
+                            (doseq [sh roster] (store/publish-shift! store sh)))))
                       (store/commit-record! store record)
                       (store/append-ledger! store {:disposition :commit :record record})
                       {:record record

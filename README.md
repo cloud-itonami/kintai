@@ -73,6 +73,54 @@ period is lawful. Compliance is not an opinion the advisor holds; it is a
 computation the governor runs, and an advisor claiming a clean week for a
 jurisdiction with no rule set changes nothing about the hold that follows.
 
+## Leave and swaps
+
+Six ops, not four. `kotoba-lang/shift` grew leave accrual, swaps and roster
+generation; these are the ones kintai now governs.
+
+```clojure
+(actor/run-request! g {:worker-id "w-1" :op :request-leave
+                       :leave (shift/leave-request "l-1" "w-1" :annual from to)} {} "t-1")
+(actor/run-request! g {:worker-id "mgr" :op :approve-leave :leave-id "l-1"} {} "t-2") ;; interrupts
+(actor/approve! g "t-2")
+
+(actor/run-request! g {:worker-id "w-1" :op :propose-swap :swap proposal} {} "t-3")
+(actor/run-request! g {:worker-id "w-2" :op :accept-swap
+                       :swap (-> proposal (shift/accept-swap "w-1") (shift/accept-swap "w-2"))
+                       :period-from from :period-to to :date-of date-of} {} "t-4")
+```
+
+Nobody requests leave on another's behalf (`:not-own-leave`) and nobody approves
+their own (`:self-approval`). Approving **always** interrupts, and the status
+transition to `:approved` happens only after a human resumes the thread — which
+is also the moment the worker comes off the board.
+
+A mutually accepted swap with a free receiver **commits without a manager**.
+That is deliberate: requiring sign-off for a swap two colleagues arranged is the
+paternalism the design avoids. What it cannot do is override the receiver's
+availability or their approved leave.
+
+### Two people cannot agree their way past a statute
+
+This is the rule that makes composing `shift` with `worklaw` worth doing. Before
+a swap applies, the governor re-runs the statute against the **receiver's
+resulting schedule**:
+
+```clojure
+;; w-2 already works 09:00–20:00 that day. Taking w-1's 8h shift on top
+;; breaks 労基法 32条2項. Both of them want it.
+;; => :hold, :unlawful-swap — and NOT an escalation.
+```
+
+Consent between colleagues is not a source of law, so there is no approval route
+around it. And a swap whose lawfulness could not be checked at all
+(`:unevaluable-swap`) is held too — that is not the same as lawful.
+
+**Planned shifts carry no break data.** The spans the swap check builds omit
+`:worked/break-ms` entirely rather than setting it to 0, so `worklaw` reports
+break rules as `:missing-break-data` instead of violated. A roster says when a
+shift starts and ends and nothing about lunch.
+
 ## Operations
 
 ```clojure
