@@ -145,6 +145,14 @@ reimplemented), then an allow-list mapping **DID → worker id**. **An absent
 allow-list serves 503, never an open endpoint** — an open punch endpoint is an
 open write path into the record that decides someone's pay.
 
+A second refusal sits in front of it: with `KINTAI_STORE` unset the endpoint serves
+**503 "no store configured"** without verifying anything. An empty in-process
+store fails the governor's registration check, so the caller would get
+`409 :no-worker` and go looking at their own registration while the actual fault
+is a deployment with no store. `KINTAI_STORE=ephemeral` enables a non-persisting
+smoke test, and every success response then carries `"ephemeral": true`. A
+durable backend is not wired yet.
+
 ## Test
 
 ```bash

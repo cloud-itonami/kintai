@@ -9,6 +9,18 @@
     // ABSENT OR EMPTY MEANS 503, not an open endpoint. /api/punch writes
     // the record that decides someone's pay and, in several
     // jurisdictions, evidence in a labour dispute.
-    "KINTAI_CALLER_ALLOWLIST": ""
+    "KINTAI_CALLER_ALLOWLIST": ""    ,
+    // How this deployment stores what it accepts.
+    //
+    //   (unset)     every request is refused with 503 "no store configured"
+    //   ephemeral   an in-process store that does NOT survive the request —
+    //               a smoke test, and every success response carries
+    //               "ephemeral": true so nobody mistakes it for persistence
+    //
+    // Unset is the default ON PURPOSE. An empty in-process store would fail
+    // the governor's registration check and return 409 :no-worker, blaming
+    // the caller for a deployment that has no store at all. A durable
+    // backend is not wired yet; see the repo's CLAUDE.md.
+    "KINTAI_STORE": ""
   }
 }

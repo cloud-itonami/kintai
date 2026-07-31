@@ -46,7 +46,8 @@ compliance is a computation the governor runs, not an opinion the advisor holds.
 `MemStore` ≡ `DatomicStore` — same protocol, same contract test; write both
 sides of any store change. The HTTP surface is **one route**: `POST /api/punch`.
 Approval, correction and rostering have no HTTP representation. An absent
-allow-list serves **503**.
+allow-list serves **503**. An unset `KINTAI_STORE` serves **503** too — refusing beats
+returning `:no-worker` and blaming the caller for a storeless deployment.
 
 ## Test
 

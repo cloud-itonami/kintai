@@ -71,6 +71,41 @@
         m))
     (catch #?(:clj Exception :cljs :default) _ nil)))
 
+;; ---------------------------------------------------------------------------
+;; Store selection
+;; ---------------------------------------------------------------------------
+
+(defn store-mode
+  "How this deployment is configured to store what it accepts, from the
+  `KINTAI_STORE` env var.
+
+    nil          nothing configured
+    :ephemeral   an in-process store that does not survive the request
+
+  Returns nil for anything else, including an unrecognised value — a typo
+  in a deployment variable must not silently select a storage mode.
+
+  Portable (takes a plain map) so the decision is testable without a
+  platform; the `:cljs` entry point converts Cloudflare's `env` into one."
+  [env]
+  (case (some-> (get env "KINTAI_STORE") .trim)
+    "ephemeral" :ephemeral
+    nil))
+
+(defn store-unconfigured-response
+  "What to serve when no store mode is configured.
+
+  Deliberately 503 and NOT an empty in-process store. An empty store makes
+  every request fail the governor's registration check, so the caller is
+  told `:no-worker` — blamed for a deployment that has no store at all.
+  Misattributed blame is worse than a refusal: the operator goes looking
+  at their own registration while the actual fault is here."
+  []
+  {:status 503
+    :body {:ok false :error "no store configured"
+           :hint "bind a durable store, or set KINTAI_STORE=ephemeral for a
+                  non-persisting smoke test"}})
+
 (defn record-punches-core!
   "`POST /api/punch`. `caller-did` is already verified.
 
@@ -81,7 +116,7 @@
     200  committed; the body reports the pairing anomalies the stored
          stream now has, so a terminal that dropped a clock-out learns
          about it at the moment it matters rather than at approval time"
-  [store allowlist caller-did raw-body]
+  [store mode allowlist caller-did raw-body]
   (cond
     (nil? allowlist)
     {:status 503 :body {:ok false :error "no allow-list configured"}}
@@ -100,7 +135,7 @@
         (if (= :commit disposition)
           (let [paired (shift/pair-punches (store/punches-of store worker-id))]
             {:status 200
-             :body {:ok true :worker worker-id
+             :body {:ok true :ephemeral (= :ephemeral mode) :worker worker-id
                     :recorded (count (:punches body))
                     :total (count (store/punches-of store worker-id))
                     :anomalies (mapv :anomaly/rule (:anomalies paired))}})
@@ -123,17 +158,24 @@
      own."
      [context]
      (let [env (aget context "env")
+           mode (store-mode {"KINTAI_STORE" (aget env "KINTAI_STORE")})
            allowlist (parse-allowlist (aget env "KINTAI_CALLER_ALLOWLIST"))
            header (or (.get (aget (aget context "request") "headers") "authorization") "")
            token (if (.startsWith header "Bearer ") (subs header 7) header)]
        (-> (js/Promise.all #js [(cacao/verify token) (.text (aget context "request"))])
            (.then (fn [results]
                     (let [v (aget results 0) raw (aget results 1)]
-                      (if-not (:valid v)
+                      (cond
+                        (nil? mode)
+                        (json-response (store-unconfigured-response))
+
+                        (not (:valid v))
                         (json-response {:status 401
-                                        :body {:ok false :error "invalid or expired CACAO"}})
-                        (json-response (record-punches-core! (store/mem-store) allowlist
-                                                             (:iss v) raw))))))
+                                                        :body {:ok false :error "invalid or expired CACAO"}})
+
+                        :else
+                        (json-response (record-punches-core! (store/mem-store) mode
+                                                      allowlist (:iss v) raw))))))
            (.catch (fn [e]
                      (json-response {:status 500
                                      :body {:ok false :error "request failed"
