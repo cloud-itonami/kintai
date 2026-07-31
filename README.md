@@ -227,6 +227,20 @@ is a deployment with no store. `KINTAI_STORE=ephemeral` enables a non-persisting
 smoke test, and every success response then carries `"ephemeral": true`. A
 durable backend is not wired yet.
 
+The deploy artifact is **built and exercised**, not merely configured:
+
+```bash
+npm install && npx shadow-cljs release edge-api   # -> functions/edge/
+```
+
+The `:esm` release runs `:advanced` optimization, which `cljs.main -c` does not,
+so it is the first thing that could rename `KINTAI_STORE`,
+`KINTAI_CALLER_ALLOWLIST` or `authorization` out from under the handler. They
+survive (`:infer-externs :auto`), the module loads under Node, and invoking
+`punchOnRequestPost` against a mock Cloudflare context returns 503 unset, 503 on a typo'd
+store mode, and 401 for a bad CACAO. Running it for real is also what surfaced a
+multi-line string literal leaking source indentation into the JSON `hint`.
+
 ## Test
 
 ```bash
