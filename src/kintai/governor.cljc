@@ -51,7 +51,8 @@
    10. low confidence (< `confidence-floor`)."
   (:require [kotoba.shift :as shift]
             [kotoba.worklaw :as worklaw]
-            [kintai.store :as store]))
+            [kintai.store :as store]
+            [governor.core :as gov]))
 
 (def confidence-floor 0.6)
 (def ^:private escalating-ops
@@ -187,13 +188,20 @@
         in-period (period-filter worked proposal)
         recomputed (shift/worked-hours in-period)
         approving? (= :approve-attendance op)]
-    (cond-> []
-      (nil? worker-record)
-      (conj {:rule :no-worker :detail "未登録 worker"})
+    (gov/violations
+     ;; --- the fleet's, from kotoba-lang/governor -------------------------
+     ;; kintai's subject is a worker, not a client; the library takes the
+     ;; record already read and lets the rule keyword be named locally.
+     (gov/missing-subject worker-record {:rule :no-worker :detail "未登録 worker"})
+     (gov/no-actuation {:effect effect}
+                       {:detail "effect は :propose のみ許可（直接書込禁止）"})
+     ;; :unknown-leave and :no-such-shift stay local: each resolves its
+     ;; entity with an inline filter shared with an adjacent rule, so
+     ;; routing them through unknown-scope would mean hoisting the lookup
+     ;; — a refactor with its own risk, not part of this adoption.
 
-      (not= :propose effect)
-      (conj {:rule :no-actuation :detail "effect は :propose のみ許可（直接書込禁止）"})
-
+     ;; --- kintai's own -----------------------------------------------------
+     (cond-> []
       (and (number? hours) (not= hours recomputed))
       (conj {:rule :hours-mismatch
              :detail (str "hours " hours " ≠ 打刻を再ペアリングした " recomputed)})
@@ -281,7 +289,7 @@
       (conj {:rule :unlawful-roster
              :detail (str (count (worklaw/prohibitions law)) " 件の法定違反: "
                           (pr-str (mapv #(get-in % [:violation/rule :rule/id])
-                                        (worklaw/prohibitions law))))}))))
+                                        (worklaw/prohibitions law))))})))))
 
 (defn check
   "Assess a proposal against `request`/`context`/`proposal` and a `store`
@@ -313,11 +321,25 @@
         ;; would send every JP swap to a manager for a reason that has
         ;; nothing to do with the swap.
         unjudged  (when (and law (= :approve-attendance (:op proposal)))
-                    (inherent-unevaluated law))]
-    {:ok?        (and (not hard?) (not low?) (not risky-op?) (not priced?) (empty? unjudged))
-     :violations hard
-     :law        law
-     :unevaluated unjudged
-     :confidence conf
-     :hard?      hard?
-     :escalate?  (and (not hard?) (or low? risky-op? priced? (seq unjudged)))}))
+                    (inherent-unevaluated law))
+        escalating? (boolean (or risky-op? priced? (seq unjudged)))]
+    (gov/verdict
+     {:violations hard
+      :confidence conf
+      ;; three triggers collapse into the library's one: the op is risky by
+      ;; nature, the statute priced a violation, or a rule could not be
+      ;; judged. :ok? and :escalate? come out identical to the hand-rolled
+      ;; assembly this replaces -- (not (or a b c)) is (and (not a) (not b)
+      ;; (not c)) -- which the conformance suite and the pre-existing tests
+      ;; both pin.
+      :escalating-op? escalating?
+      :confidence-floor confidence-floor
+      :extra (cond-> {:law law :unevaluated unjudged}
+               ;; a reason more specific than the library's generic
+               ;; :counsel-decision, derived from the SAME booleans so it
+               ;; cannot contradict :escalate?.
+               (and (not hard?) escalating?)
+               (assoc :escalation-reason
+                      (cond priced?        :priced-statutory-violation
+                            (seq unjudged) :unjudged-statutory-rule
+                            :else          :counsel-decision)))})))
