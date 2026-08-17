@@ -8,12 +8,25 @@
         ;; clock. Both referenced by workspace-sibling path per the
         ;; fleet's capability-library-wrapping convention (same as
         ;; cloud-itonami-isco-4313 wraps kotoba-lang/labor).
-        io.github.kotoba-lang/shift   {:local/root "../../kotoba-lang/shift"}
-        io.github.kotoba-lang/worklaw {:local/root "../../kotoba-lang/worklaw"}
+        ;;
+        ;; GIT deps, not sibling paths. A :local/root here made this repo
+        ;; ungateable on the murakumo fleet, which ships one repo's tree and
+        ;; no siblings, and made a fork need the whole kotoba-lang workspace
+        ;; layout. Measured 2026-08-17 by parsing each library's deps.edn as
+        ;; EDN: shift, worklaw and langchain-store all have zero :local/root
+        ;; deps of their own. Verified by running this suite from a worktree
+        ;; with no sibling directory in existence.
+        io.github.kotoba-lang/shift
+        {:git/url "https://github.com/kotoba-lang/shift.git"
+         :git/sha "a31ac34eb2ad2f1bac1168a97dbf1cd0fffcff75"}
+        io.github.kotoba-lang/worklaw
+        {:git/url "https://github.com/kotoba-lang/worklaw.git"
+         :git/sha "2e87a6ba258f3a7cc70bbea188ee1f9bbf59fede"}
         ;; shared langchain.db store seam (EDN-blob codec + identity
         ;; schema + seq-keyed event streams) — ADR-2607141600.
         io.github.kotoba-lang/langchain-store
-        {:local/root "../../kotoba-lang/langchain-store"}
+        {:git/url "https://github.com/kotoba-lang/langchain-store.git"
+         :git/sha "b986669f72276568c97e1fa5b331a5ff3017bf69"}
         ;; CACAO verification for the edge. Depended on, never
         ;; reimplemented (ADR-2607268000).
         io.github.kotoba-lang/org-chainagnostic-cacao
