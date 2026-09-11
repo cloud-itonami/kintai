@@ -23,8 +23,8 @@ be cited do not go in.
 Before opening a PR:
 
 ```bash
-clojure -M:lint
-clojure -M:test
+kbb -M:lint
+kbb -M:test
 ```
 
 `GOVERNANCE.md` lists the rules that are not up for discussion.
