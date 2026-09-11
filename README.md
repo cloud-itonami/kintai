@@ -32,7 +32,7 @@ kintai is the hardest of its siblings to adopt, and the reason is worth
 stating: it has **three** escalation triggers where the library has one (a
 risky op, a statute that priced a violation, and a rule nobody could judge),
 and it carries two extra keys (`:law`, `:unevaluated`) that a console needs.
-Both survive — `test/kintai/conformance_test.clj` pins every disposition,
+Both survive — `test/kintai/conformance_test.cljk` pins every disposition,
 asserts the extra keys are still present, and asserts that more than one
 escalation trigger is actually exercised rather than one standing in for
 three.
