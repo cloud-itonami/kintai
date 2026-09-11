@@ -252,7 +252,7 @@ durable backend is not wired yet.
 The deploy artifact is **built and exercised**, not merely configured:
 
 ```bash
-npm install && npx shadow-cljs release edge-api   # -> functions/edge/
+npm install && amu compile --target wasm32-browser edge-api   # -> functions/edge/
 ```
 
 The `:esm` release runs `:advanced` optimization, which `cljs.main -c` does not,
@@ -266,8 +266,8 @@ multi-line string literal leaking source indentation into the JSON `hint`.
 ## Test
 
 ```bash
-clojure -M:test
-clojure -M:lint
+kbb -M:test
+kbb -M:lint
 ```
 
 ## License
