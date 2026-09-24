@@ -39,7 +39,7 @@
   (:require [kintai.actor :as actor]
             [kintai.store :as store]
             [kotoba.shift :as shift]
-            #?(:clj [clojure.edn :as edn] :cljs [cljs.reader :as edn])
+            #?(:clj [kotoba.lang.edn :as edn] :cljs [cljs.reader :as edn])
             #?(:cljs [cacao.edge.verify :as cacao])))
 
 (defn parse-allowlist
