@@ -1,5 +1,5 @@
 (ns kintai.governor-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [kotoba.shift :as shift]
             [kintai.store :as store]
             [kintai.governor :as governor]))

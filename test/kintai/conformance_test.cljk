@@ -13,7 +13,7 @@
   `:unevaluated`). Collapsing those three into the shared library's single
   `:escalating-op?` is exactly the kind of step where a hand-rolled verdict
   drifts, so it is pinned here across every disposition."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [kotoba.shift :as shift]
             [kintai.store :as store]
             [kintai.governor :as governor]

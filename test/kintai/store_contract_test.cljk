@@ -6,7 +6,7 @@
   evidence in a labour dispute. A backend that reordered them, dropped
   one, or let a correction overwrite the terminal's original reading
   would break the property the whole actor rests on."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [kotoba.shift :as shift]
             [kintai.store :as store]
             [kintai.actor :as actor]))
