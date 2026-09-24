@@ -31,7 +31,7 @@
      :rationale str}"
   (:require [kotoba.shift :as shift]
             [kintai.store :as store]
-            #?(:clj [clojure.edn :as edn] :cljs [cljs.reader :as edn])))
+            #?(:clj [kotoba.lang.edn :as edn] :cljs [cljs.reader :as edn])))
 
 (defprotocol Advisor
   (-advise [advisor store request] "request -> proposal map"))
