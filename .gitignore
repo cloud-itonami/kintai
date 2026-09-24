@@ -4,3 +4,4 @@
 capture.edn
 /node_modules/
 /.shadow-cljs/
+.nbb/

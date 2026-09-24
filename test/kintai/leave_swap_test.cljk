@@ -4,7 +4,7 @@
   The rule worth having here is the one that makes composing
   `kotoba.shift` with `kotoba.worklaw` worth doing: two people may agree
   to swap, but they cannot agree their way past a statute."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [kotoba.shift :as shift]
             [kintai.store :as store]
             [kintai.actor :as actor]
