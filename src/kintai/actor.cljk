@@ -1,6 +1,6 @@
 (ns kintai.actor
   "KintaiActor — the kintai (勤怠) attendance actor as a
-  `langgraph.graph/state-graph` (ADR-2607011000 / CLAUDE.md Actors
+  `langgraph.graph/state-graph` (ADR-2607011000 / AGENTS.md Actors
   section). One graph run = one attendance operation request
   (intake → advise → govern → decide → commit/hold, with a
   human-approval interrupt for escalated proposals). No infinite internal

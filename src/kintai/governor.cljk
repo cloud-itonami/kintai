@@ -1,7 +1,7 @@
 (ns kintai.governor
   "KintaiGovernor — the independent safety/traceability layer for the
   kintai (勤怠) attendance actor (itonami actor pattern, ADR-2607011000 /
-  CLAUDE.md Actors section). Modeled on cloud-itonami-isco-4313's
+  AGENTS.md Actors section). Modeled on cloud-itonami-isco-4313's
   payroll.governor, with the attendance-specific twist that the governor
   RE-PAIRS the stored punches via `kotoba.shift` and re-runs the
   statutory check via `kotoba.worklaw` — the advisor's hours are never
