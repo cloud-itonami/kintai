@@ -2,7 +2,7 @@
   "SSoT for the kintai (勤怠) attendance actor. Store is a protocol
   injected into the `kintai.actor` StateGraph — `MemStore` is the
   default, deterministic, zero-dep backend (itonami actor pattern,
-  ADR-2607011000 / CLAUDE.md Actors section). Modeled on
+  ADR-2607011000 / AGENTS.md Actors section). Modeled on
   cloud-itonami-isco-4313's payroll.store; the attendance records use
   `kotoba.shift`'s shapes verbatim and the statutory checks come from
   `kotoba.worklaw` — this actor CONSUMES both, it reinvents neither

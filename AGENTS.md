@@ -1,4 +1,4 @@
-# CLAUDE.md — cloud-itonami/kintai 勤怠
+# AGENTS.md — cloud-itonami/kintai 勤怠
 
 Attendance and statutory working-time actor. itonami pattern: advisor ⊣
 independent governor ⊣ append-only ledger. Punch mechanics are
