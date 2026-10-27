@@ -2,7 +2,7 @@
 
 Attendance and statutory working-time actor. itonami pattern: advisor ⊣
 independent governor ⊣ append-only ledger. Punch mechanics are
-`kotoba-lang/shift`; statute is `kotoba-lang/worklaw`; this repo is the governed
+`kotoba-lang/shift` (now `lib/kotoba.shift` in `kotoba-lang/kotoba`); statute is `kotoba-lang/worklaw` (now `lib/kotoba.worklaw`); this repo is the governed
 shell.
 
 ## The rule this actor exists for
@@ -11,7 +11,7 @@ shell.
 either. There is no human whose signature substitutes for a statute nobody has
 encoded. Do not add an approval route around `:unchecked-law`, and do not add an
 "assume compliant when unknown" flag. The way to make a jurisdiction approvable
-is to add its rules to `kotoba-lang/worklaw`, with citations.
+is to add its rules to `kotoba-lang/worklaw` (now `lib/kotoba.worklaw` in `kotoba-lang/kotoba`), with citations.
 
 ## Two distinctions to preserve
 
